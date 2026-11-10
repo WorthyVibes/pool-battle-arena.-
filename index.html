@@ -1,0 +1,164 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pool Battle Arena</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101827;color:white;font-family:Arial;text-align:center}
+header{padding:18px;background:#17243a}
+h1{color:#f5c451;margin:5px}
+p{color:#cbd5e1}
+.game{padding:15px}
+canvas{width:100%;max-width:900px;background:#075b39;border:12px solid #754321;border-radius:12px;touch-action:none}
+button{background:#f5c451;color:#142033;border:0;border-radius:8px;padding:12px 22px;font-weight:bold;margin:10px}
+.info{margin:12px;color:#f5c451}
+</style>
+</head>
+<body>
+<header>
+<h1>🎱 POOL BATTLE ARENA</h1>
+<p>Challenge your skills. Rule the table!</p>
+</header>
+<div class="game">
+<div class="info" id="status">Drag away from the white ball and release to shoot.</div>
+<canvas id="table" width="900" height="500"></canvas>
+<br>
+<button onclick="resetGame()">New Game</button>
+<p>Touch and drag on the table to aim and shoot.</p>
+</div>
+<script>
+const canvas=document.getElementById("table");
+const ctx=canvas.getContext("2d");
+const W=900,H=500;
+const R=13;
+let balls=[],aim=null,moving=false;
+const pockets=[
+[20,20],[450,15],[880,20],
+[20,480],[450,485],[880,480]
+];
+function resetGame(){
+ balls=[{x:220,y:250,vx:0,vy:0,c:"#fff",n:""}];
+ let colors=["#facc15","#2563eb","#dc2626","#7c3aed",
+ "#f97316","#16a34a","#7f1d1d","#111"];
+ let positions=[
+ [570,250],[595,235],[595,265],[620,220],
+ [620,250],[620,280],[645,205],[645,235],
+ [645,265],[645,295],[670,220],[670,250],
+ [670,280],[695,235],[695,265]
+ ];
+ positions.forEach((p,i)=>balls.push({
+ x:p[0],y:p[1],vx:0,vy:0,c:colors[i%8],n:i+1
+ }));
+ moving=false;
+ aim=null;
+ document.getElementById("status").textContent="Your turn! Aim and shoot.";
+ draw();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ ctx.fillStyle="#087345";
+ ctx.fillRect(0,0,W,H);
+ ctx.strokeStyle="#b9e6c9";
+ ctx.lineWidth=2;
+ ctx.strokeRect(35,35,830,430);
+ pockets.forEach(p=>{
+ ctx.beginPath();ctx.arc(p[0],p[1],25,0,Math.PI*2);
+ ctx.fillStyle="#080808";ctx.fill();
+ });
+ if(aim&&!moving){
+ let b=balls[0];
+ ctx.beginPath();ctx.moveTo(b.x,b.y);
+ ctx.lineTo(aim.x,aim.y);
+ ctx.strokeStyle="rgba(255,255,255,.6)";
+ ctx.setLineDash([8,8]);ctx.stroke();ctx.setLineDash([]);
+ }
+ balls.forEach(b=>{
+ ctx.beginPath();ctx.arc(b.x,b.y,R,0,Math.PI*2);
+ ctx.fillStyle=b.c;ctx.fill();
+ ctx.strokeStyle="#ddd";ctx.lineWidth=1;ctx.stroke();
+ if(b.n){
+ ctx.fillStyle="white";
+ ctx.font="bold 11px Arial";
+ ctx.textAlign="center";ctx.textBaseline="middle";
+ ctx.fillText(b.n,b.x,b.y);
+ }
+ });
+}
+function physics(){
+ if(moving){
+ balls.forEach(b=>{
+ b.x+=b.vx;b.y+=b.vy;
+ b.vx*=.985;b.vy*=.985;
+ if(Math.abs(b.vx)+Math.abs(b.vy)<.08)b.vx=b.vy=0;
+ if(b.x<R+35||b.x>W-R-35)b.vx*=-.85;
+ if(b.y<R+35||b.y>H-R-35)b.vy*=-.85;
+ });
+ for(let i=0;i<balls.length;i++){
+ for(let j=i+1;j<balls.length;j++){
+ let a=balls[i],b=balls[j];
+ let dx=b.x-a.x,dy=b.y-a.y;
+ let d=Math.hypot(dx,dy);
+ if(d<2*R&&d>0){
+ let nx=dx/d,ny=dy/d;
+ let overlap=2*R-d;
+ a.x-=nx*overlap/2;a.y-=ny*overlap/2;
+ b.x+=nx*overlap/2;b.y+=ny*overlap/2;
+ let rel=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;
+ if(rel>0){
+ a.vx-=rel*nx;a.vy-=rel*ny;
+ b.vx+=rel*nx;b.vy+=rel*ny;
+ }
+ }
+ }
+ }
+ balls=balls.filter((b,i)=>{
+ if(i===0)return true;
+ return !pockets.some(p=>Math.hypot(b.x-p[0],b.y-p[1])<24);
+ });
+ let still=balls.every(b=>Math.abs(b.vx)+Math.abs(b.vy)<.08);
+ if(still){
+ balls.forEach(b=>{b.vx=0;b.vy=0});
+ moving=false;
+ document.getElementById("status").textContent=
+ balls.length===1?"All object balls pocketed! New game?":"Your turn! Aim and shoot.";
+ }
+ }
+ draw();
+ requestAnimationFrame(physics);
+}
+function point(e){
+ let r=canvas.getBoundingClientRect();
+ return {x:(e.clientX-r.left)*W/r.width,
+ y:(e.clientY-r.top)*H/r.height};
+}
+canvas.addEventListener("pointerdown",e=>{
+ if(moving)return;
+ let p=point(e),b=balls[0];
+ if(Math.hypot(p.x-b.x,p.y-b.y)<65){
+ aim=p;canvas.setPointerCapture(e.pointerId);
+ }
+});
+canvas.addEventListener("pointermove",e=>{
+ if(aim&&!moving)aim=point(e);
+});
+canvas.addEventListener("pointerup",e=>{
+ if(!aim||moving)return;
+ let p=point(e),b=balls[0];
+ let dx=b.x-p.x,dy=b.y-p.y;
+ let power=Math.min(Math.hypot(dx,dy)*.07,16);
+ if(power>.5){
+ b.vx=dx/Math.hypot(dx,dy)*power;
+ b.vy=dy/Math.hypot(dx,dy)*power;
+ moving=true;
+ document.getElementById("status").textContent="Shot taken!";
+ }
+ aim=null;draw();
+});
+resetGame();
+physics();
+</script>
+</body>
+</html>
