@@ -1,0 +1,329 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pool Battle Arena</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101827;color:white;font-family:Arial;text-align:center}
+header{padding:15px;background:#192b40}
+h1{color:#f5c451;margin:5px;font-size:24px}
+p{color:#cbd5e1}
+main{padding:12px;max-width:950px;margin:auto}
+select,button{padding:11px;border:0;border-radius:8px;font-weight:bold}
+select{background:#263b50;color:white}
+button{background:#f5c451;color:#142033;margin:4px}
+button:disabled{opacity:.4}
+canvas{width:100%;background:#075b39;border:9px solid #754321;border-radius:12px;touch-action:none}
+.panel{background:#1c2b40;padding:13px;border-radius:12px;margin:12px 0}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:block;margin:8px}
+input[type=range]{width:100%;accent-color:#f5c451}
+#spin{width:120px;height:120px;border-radius:50%;background:#dce5ee;margin:10px auto;position:relative;touch-action:none}
+#spin:before{content:"";position:absolute;left:50%;top:0;bottom:0;border-left:1px solid #777}
+#spin:after{content:"";position:absolute;top:50%;left:0;right:0;border-top:1px solid #777}
+#dot{position:absolute;width:17px;height:17px;background:#eab308;border:2px solid #222;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2}
+.status{color:#f5c451;font-weight:bold;min-height:24px}
+.small{font-size:12px;color:#b9c7d7}
+</style>
+</head>
+<body>
+<header>
+<h1>🎱 POOL BATTLE ARENA</h1>
+<p>Challenge your skills. Rule the table!</p>
+</header>
+<main>
+<div class="panel">
+<label>SELECT GAME MODE</label>
+<select id="mode">
+<option value="8">8-Ball Pool</option>
+<option value="9">9-Ball Pool</option>
+<option value="snooker">Snooker</option>
+</select>
+<button onclick="newGame()">New Game</button>
+</div>
+
+<div class="status" id="status">Choose your aim and take a shot!</div>
+<canvas id="table" width="900" height="500"></canvas>
+
+<div class="panel">
+<strong>AIMING CONTROLS</strong>
+<p class="small">Tap the table to aim. Dragging is also supported. Then press SHOOT.</p>
+<div class="controls">
+<button onclick="rotate(-5)">↶ Aim Left</button>
+<button onclick="rotate(5)">Aim Right ↷</button>
+</div>
+<label>SHOT POWER: <span id="powerText">50%</span></label>
+<input id="power" type="range" min="5" max="100" value="50">
+<button id="shoot" onclick="shoot()">🎯 SHOOT</button>
+</div>
+
+<div class="panel">
+<strong>WHITE BALL CONTROL</strong>
+<p class="small">Tap Place White Ball, then tap an open position on the table.</p>
+<button id="place" onclick="togglePlace()">Place White Ball</button>
+<div class="small" id="placeStatus">Placement disabled</div>
+</div>
+
+<div class="panel">
+<strong>CUE BALL SPIN</strong>
+<p class="small">Drag the yellow marker to choose where the cue strikes the white ball.</p>
+<div id="spin"><div id="dot"></div></div>
+<div id="spinText" class="small">Centre spin</div>
+<button onclick="resetSpin()">Reset Spin</button>
+</div>
+
+<div class="panel">
+<strong>GAME INFORMATION</strong>
+<p id="score">Pocketed balls: 0</p>
+<p class="small">Single-player prototype. Online multiplayer and official game rules are future upgrades.</p>
+</div>
+</main>
+
+<script>
+const c=document.getElementById("table");
+const ctx=c.getContext("2d");
+const W=900,H=500,R=13;
+const pockets=[[20,20],[450,15],[880,20],[20,480],[450,485],[880,480]];
+let balls=[],aim={x:650,y:250},moving=false,placing=false;
+let spin={x:0,y:0},pocketed=0,mode="8";
+
+function ball(x,y,color,num=""){
+return {x,y,vx:0,vy:0,color,num};
+}
+
+function newGame(){
+mode=document.getElementById("mode").value;
+balls=[];
+pocketed=0;
+moving=false;
+placing=false;
+balls.push(ball(220,250,"white"));
+if(mode==="snooker"){
+for(let row=0;row<5;row++){
+for(let col=0;col<=row;col++){
+balls.push(ball(620+row*24,250+(col-row/2)*25,"#dc2626","R"));
+}
+}
+[
+[450,250,"#facc15"],
+[400,250,"#2563eb"],
+[380,230,"#111111"],
+[380,250,"#a855f7"],
+[380,270,"#f97316"],
+[360,250,"#16a34a"]
+].forEach((p,i)=>balls.push(ball(p[0],p[1],p[2],"C")));
+}else{
+let colors=["#facc15","#2563eb","#dc2626","#a855f7","#f97316","#16a34a","#7f1d1d","#111"];
+let n=mode==="9"?9:15;
+for(let i=0;i<n;i++){
+let row=Math.floor((Math.sqrt(8*i+1)-1)/2);
+let col=i-row*(row+1)/2;
+let color=colors[i%8];
+if(mode==="9"&&i===4)color="#facc15";
+balls.push(ball(570+row*24,250+(col-row/2)*25,color,String(i+1)));
+}
+}
+aim={x:650,y:250};
+document.getElementById("status").textContent="Aim at the balls and shoot!";
+document.getElementById("score").textContent="Pocketed balls: 0";
+document.getElementById("placeStatus").textContent="Placement disabled";
+document.getElementById("place").textContent="Place White Ball";
+document.getElementById("shoot").disabled=false;
+draw();
+}
+
+function draw(){
+ctx.clearRect(0,0,W,H);
+ctx.fillStyle="#087345";
+ctx.fillRect(0,0,W,H);
+ctx.strokeStyle="#b9e6c9";
+ctx.lineWidth=2;
+ctx.strokeRect(35,35,830,430);
+pockets.forEach(p=>{
+ctx.beginPath();
+ctx.arc(p[0],p[1],25,0,Math.PI*2);
+ctx.fillStyle="#080808";
+ctx.fill();
+});
+let b=balls[0];
+if(b&&!moving&&!placing){
+let dx=b.x-aim.x,dy=b.y-aim.y;
+let d=Math.hypot(dx,dy)||1;
+ctx.beginPath();
+ctx.moveTo(b.x,b.y);
+ctx.lineTo(b.x+dx/d*650,b.y+dy/d*650);
+ctx.strokeStyle="rgba(255,255,255,.65)";
+ctx.setLineDash([9,9]);
+ctx.stroke();
+ctx.setLineDash([]);
+ctx.beginPath();
+ctx.moveTo(b.x,b.y);
+ctx.lineTo(b.x+dx/d*75,b.y+dy/d*75);
+ctx.strokeStyle="#e7c78b";
+ctx.lineWidth=7;
+ctx.stroke();
+}
+balls.forEach(b=>{
+ctx.beginPath();
+ctx.arc(b.x,b.y,R,0,Math.PI*2);
+ctx.fillStyle=b.color;
+ctx.fill();
+ctx.strokeStyle="#ddd";
+ctx.lineWidth=1;
+ctx.stroke();
+if(b.num){
+ctx.fillStyle="white";
+ctx.font="bold 10px Arial";
+ctx.textAlign="center";
+ctx.textBaseline="middle";
+ctx.fillText(b.num,b.x,b.y);
+}
+});
+}
+
+function rotate(deg){
+let b=balls[0];
+if(!b||moving)return;
+let a=Math.atan2(b.y-aim.y,b.x-aim.x)+deg*Math.PI/180;
+aim={x:b.x-Math.cos(a)*150,y:b.y-Math.sin(a)*150};
+draw();
+}
+
+c.addEventListener("pointerdown",e=>{
+if(moving)return;
+let r=c.getBoundingClientRect();
+let p={x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height};
+if(placing){
+if(p.x>48&&p.x<852&&p.y>48&&p.y<452&&
+balls.slice(1).every(b=>Math.hypot(b.x-p.x,b.y-p.y)>R*2)){
+balls[0].x=p.x;
+balls[0].y=p.y;
+placing=false;
+document.getElementById("placeStatus").textContent="White ball placed";
+document.getElementById("place").textContent="Place White Ball";
+draw();
+}
+}else{
+aim=p;
+draw();
+}
+});
+
+function shoot(){
+if(moving||!balls.length)return;
+let b=balls[0];
+let dx=b.x-aim.x,dy=b.y-aim.y;
+let d=Math.hypot(dx,dy);
+if(d<1)return;
+let power=Number(document.getElementById("power").value)/100;
+let strength=power*17;
+b.vx=dx/d*strength+spin.x*strength*.12;
+b.vy=dy/d*strength+spin.y*strength*.12;
+moving=true;
+document.getElementById("shoot").disabled=true;
+document.getElementById("status").textContent="Shot in progress!";
+}
+
+function togglePlace(){
+if(moving)return;
+placing=!placing;
+document.getElementById("placeStatus").textContent=
+placing?"Tap an open position on the table":"Placement disabled";
+document.getElementById("place").textContent=
+placing?"Cancel Placement":"Place White Ball";
+}
+
+function resetSpin(){
+spin={x:0,y:0};
+document.getElementById("dot").style.left="50%";
+document.getElementById("dot").style.top="50%";
+document.getElementById("spinText").textContent="Centre spin";
+}
+
+const pad=document.getElementById("spin");
+const dot=document.getElementById("dot");
+let spinDrag=false;
+pad.addEventListener("pointerdown",e=>{
+spinDrag=true;
+pad.setPointerCapture(e.pointerId);
+updateSpin(e);
+});
+pad.addEventListener("pointermove",e=>{
+if(spinDrag)updateSpin(e);
+});
+pad.addEventListener("pointerup",()=>spinDrag=false);
+pad.addEventListener("pointercancel",()=>spinDrag=false);
+
+function updateSpin(e){
+let r=pad.getBoundingClientRect();
+let x=Math.max(-1,Math.min(1,(e.clientX-r.left-r.width/2)/(r.width/2-10)));
+let y=Math.max(-1,Math.min(1,(e.clientY-r.top-r.height/2)/(r.height/2-10)));
+spin={x,y};
+dot.style.left=(50+x*38)+"%";
+dot.style.top=(50+y*38)+"%";
+document.getElementById("spinText").textContent=
+x<-.3?"Left spin":x>.3?"Right spin":
+y<-.3?"Top spin":y>.3?"Back spin":"Centre spin";
+}
+
+document.getElementById("power").oninput=e=>{
+document.getElementById("powerText").textContent=e.target.value+"%";
+};
+
+function physics(){
+if(moving){
+balls.forEach(b=>{
+b.x+=b.vx;
+b.y+=b.vy;
+b.vx*=.987;
+b.vy*=.987;
+if(Math.abs(b.vx)+Math.abs(b.vy)<.06)b.vx=b.vy=0;
+if(b.x<R+35||b.x>W-R-35)b.vx*=-.85;
+if(b.y<R+35||b.y>H-R-35)b.vy*=-.85;
+});
+for(let i=0;i<balls.length;i++){
+for(let j=i+1;j<balls.length;j++){
+let a=balls[i],b=balls[j];
+let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);
+if(d<2*R&&d>0){
+let nx=dx/d,ny=dy/d;
+let overlap=2*R-d;
+a.x-=nx*overlap/2;
+a.y-=ny*overlap/2;
+b.x+=nx*overlap/2;
+b.y+=ny*overlap/2;
+let rel=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;
+if(rel>0){
+a.vx-=rel*nx;a.vy-=rel*ny;
+b.vx+=rel*nx;b.vy+=rel*ny;
+}
+}
+}
+}
+balls=balls.filter((b,i)=>{
+let pocket=pockets.some(p=>Math.hypot(b.x-p[0],b.y-p[1])<24);
+if(pocket&&i!==0){pocketed++;return false;}
+return true;
+});
+let still=balls.every(b=>Math.abs(b.vx)+Math.abs(b.vy)<.06);
+if(still){
+balls.forEach(b=>{b.vx=0;b.vy=0});
+moving=false;
+document.getElementById("shoot").disabled=false;
+document.getElementById("status").textContent="Your turn! Aim and shoot.";
+document.getElementById("score").textContent="Pocketed balls: "+pocketed;
+}
+}
+draw();
+requestAnimationFrame(physics);
+}
+
+document.getElementById("mode").addEventListener("change",newGame);
+newGame();
+physics();
+</script>
+</body>
+</html>
